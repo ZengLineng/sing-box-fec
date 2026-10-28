@@ -101,8 +101,15 @@ jobs:
           "$(go env GOPATH)/bin/gomobile" bind -target android -androidapi 24 \
             -javapkg io.nekohasekai -libname box -o dist/libbox.aar \
             -trimpath -tags "$(cat release/FEC_BUILD_TAGS)" \
-            -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=$(cat release/FEC_VERSION)" \
+            -ldflags "-s -w -checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=$(cat release/FEC_VERSION)" \
             ./experimental/libbox
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('dist/libbox.aar') as archive:
+              for abi in ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']:
+                  assert b'wireguard-fec' in archive.read(f'jni/{abi}/libbox.so'), abi
+                  print('Verified FEC in Android', abi)
+          PY
           cp LICENSE dist/
           sha256sum dist/libbox.aar > dist/SHA256SUMS
       - uses: actions/upload-artifact@v4
@@ -125,10 +132,24 @@ jobs:
         run: |
           mkdir -p dist
           "$(go env GOPATH)/bin/gomobile" bind -target ios,iossimulator,macos \
-            -iosversion 15.0 -macosversion 13.0 -libname box \
+            -iosversion 15.0 -macosversion 13.0 -libname box -tags-not-macos=with_low_memory \
             -trimpath -tags "$(cat release/FEC_BUILD_TAGS)" \
-            -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=$(cat release/FEC_VERSION)" \
+            -ldflags "-s -w -checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=$(cat release/FEC_VERSION)" \
             ./experimental/libbox
+          python3 - <<'PY'
+          from pathlib import Path
+          import plistlib
+          root = Path('Libbox.xcframework')
+          libraries = plistlib.loads((root / 'Info.plist').read_bytes())['AvailableLibraries']
+          platforms = set()
+          for library in libraries:
+              platform = (library['SupportedPlatform'], library.get('SupportedPlatformVariant', ''))
+              platforms.add(platform)
+              binary = root / library['LibraryIdentifier'] / library['LibraryPath'] / 'Libbox'
+              assert b'wireguard-fec' in binary.read_bytes(), str(binary)
+              print('Verified FEC in Apple', platform, library['SupportedArchitectures'])
+          assert {('ios', ''), ('ios', 'simulator'), ('macos', '')} <= platforms
+          PY
           tar -czf dist/Libbox.xcframework.tar.gz Libbox.xcframework
           cp LICENSE dist/
           shasum -a 256 dist/Libbox.xcframework.tar.gz > dist/SHA256SUMS
