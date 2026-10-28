@@ -30,4 +30,6 @@ make fec_test
 
 ## License
 
+Upstream copyright: Copyright (C) 2022 by nekohasekai <contact-sagernet@sekai.icu>.
+
 继承上游 [LICENSE](LICENSE) 中的 GPL-3.0-or-later 和附加名称条款。上游版权属于原作者，本分支不暗示官方关联。Reed–Solomon 来自 MIT 授权的 [klauspost/reedsolomon](https://github.com/klauspost/reedsolomon)。分发二进制时应提供对应源码、构建方式及版权说明。

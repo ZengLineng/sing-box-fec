@@ -64,7 +64,7 @@ jobs:
           go build -trimpath -tags "$(cat release/FEC_BUILD_TAGS)" \
             -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=$(cat release/FEC_VERSION)" \
             -o "dist/fecbox-$GOOS-$GOARCH$extension" ./cmd/sing-box
-          cp LICENSE README.md dist/
+          cp LICENSE README.md docs/fec/THIRD_PARTY_NOTICES.txt dist/
           if [[ "$GOOS/$GOARCH" == linux/amd64 ]]; then
             dist/fecbox-linux-amd64 schema -o dist/schema.json
           fi
@@ -110,7 +110,7 @@ jobs:
                   assert b'wireguard-fec' in archive.read(f'jni/{abi}/libbox.so'), abi
                   print('Verified FEC in Android', abi)
           PY
-          cp LICENSE dist/
+          cp LICENSE docs/fec/THIRD_PARTY_NOTICES.txt dist/
           sha256sum dist/libbox.aar > dist/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
@@ -151,7 +151,7 @@ jobs:
           assert {('ios', ''), ('ios', 'simulator'), ('macos', '')} <= platforms
           PY
           tar -czf dist/Libbox.xcframework.tar.gz Libbox.xcframework
-          cp LICENSE dist/
+          cp LICENSE docs/fec/THIRD_PARTY_NOTICES.txt dist/
           shasum -a 256 dist/Libbox.xcframework.tar.gz > dist/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
