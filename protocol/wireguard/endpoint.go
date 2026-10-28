@@ -15,6 +15,7 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing-box/transport/fec"
 	"github.com/sagernet/sing-box/transport/wireguard"
 	"github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
@@ -34,6 +35,7 @@ var (
 
 func RegisterEndpoint(registry *endpoint.Registry) {
 	endpoint.Register[option.WireGuardEndpointOptions](registry, C.TypeWireGuard, NewEndpoint)
+	endpoint.Register[option.WireGuardFECEndpointOptions](registry, C.TypeWireGuardFEC, NewFECEndpoint)
 }
 
 type Endpoint struct {
@@ -49,8 +51,21 @@ type Endpoint struct {
 }
 
 func NewEndpoint(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.WireGuardEndpointOptions) (adapter.Endpoint, error) {
+	return newEndpoint(ctx, router, logger, tag, options, nil)
+}
+
+func NewFECEndpoint(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.WireGuardFECEndpointOptions) (adapter.Endpoint, error) {
+	fecOptions := &fec.Config{Key: options.FEC.Key, DataShards: options.FEC.DataShards, ParityShards: options.FEC.ParityShards, Interval: time.Duration(options.FEC.Interval), MTU: options.FEC.MTU}
+	return newEndpoint(ctx, router, logger, tag, options.WireGuardEndpointOptions, fecOptions)
+}
+
+func newEndpoint(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.WireGuardEndpointOptions, fecOptions *fec.Config) (adapter.Endpoint, error) {
+	endpointType := C.TypeWireGuard
+	if fecOptions != nil {
+		endpointType = C.TypeWireGuardFEC
+	}
 	ep := &Endpoint{
-		Adapter:        endpoint.NewAdapterWithDialerOptions(C.TypeWireGuard, tag, []string{N.NetworkTCP, N.NetworkUDP, N.NetworkICMP}, options.DialerOptions),
+		Adapter:        endpoint.NewAdapterWithDialerOptions(endpointType, tag, []string{N.NetworkTCP, N.NetworkUDP, N.NetworkICMP}, options.DialerOptions),
 		ctx:            ctx,
 		router:         router,
 		dnsRouter:      service.FromContext[adapter.DNSRouter](ctx),
@@ -79,6 +94,7 @@ func NewEndpoint(ctx context.Context, router adapter.Router, logger log.ContextL
 	}
 	networkManager := service.FromContext[adapter.NetworkManager](ctx)
 	wgEndpoint, err := wireguard.NewEndpoint(wireguard.EndpointOptions{
+		FEC:             fecOptions,
 		Context:         ctx,
 		Logger:          logger,
 		System:          options.System,

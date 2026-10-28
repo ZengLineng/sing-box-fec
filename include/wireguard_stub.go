@@ -14,6 +14,9 @@ import (
 )
 
 func registerWireGuardEndpoint(registry *endpoint.Registry) {
+	endpoint.Register[option.WireGuardFECEndpointOptions](registry, C.TypeWireGuardFEC, func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.WireGuardFECEndpointOptions) (adapter.Endpoint, error) {
+		return nil, E.New(`WireGuard FEC is not included in this build, rebuild with -tags with_wireguard`)
+	})
 	endpoint.Register[option.WireGuardEndpointOptions](registry, C.TypeWireGuard, func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.WireGuardEndpointOptions) (adapter.Endpoint, error) {
 		return nil, E.New(`WireGuard is not included in this build, rebuild with -tags with_wireguard`)
 	})

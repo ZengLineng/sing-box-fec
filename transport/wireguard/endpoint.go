@@ -12,6 +12,7 @@ import (
 
 	"github.com/sagernet/sing-box/common/dialer"
 	"github.com/sagernet/sing-box/service/powerreport"
+	"github.com/sagernet/sing-box/transport/fec"
 	"github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -41,6 +42,19 @@ type Endpoint struct {
 }
 
 func NewEndpoint(options EndpointOptions) (*Endpoint, error) {
+	if options.FEC != nil {
+		config, err := options.FEC.Normalize()
+		if err != nil {
+			return nil, err
+		}
+		options.FEC = &config
+		if options.MTU == 0 {
+			options.MTU = 1280
+		}
+		if err = config.CheckWireGuardMTU(options.MTU); err != nil {
+			return nil, err
+		}
+	}
 	if options.PrivateKey == "" {
 		return nil, E.New("missing private key")
 	}
@@ -191,6 +205,13 @@ func (e *Endpoint) Start(postStart bool) error {
 			}
 		}
 	}
+	if e.options.FEC != nil {
+		var err error
+		bind, err = fec.NewBind(bind, *e.options.FEC, e.options.Logger)
+		if err != nil {
+			return err
+		}
+	}
 	err := e.tunDevice.Start()
 	if err != nil {
 		return err
@@ -251,7 +272,7 @@ func (e *Endpoint) Start(postStart bool) error {
 	err = wgDevice.IpcSet(ipcConf.String())
 	if err != nil {
 		wgDevice.Close()
-		return E.Cause(err, "setup wireguard: \n", ipcConf.String())
+		return E.Cause(err, "setup wireguard")
 	}
 	e.device = wgDevice
 	e.pause = service.FromContext[pause.Manager](e.options.Context)

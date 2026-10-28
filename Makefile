@@ -16,6 +16,17 @@ LIBBOX_FFI_CONFIG ?= ./experimental/libbox/ffi.json
 
 .PHONY: test release docs build schema
 
+FEC_TAGS ?= $(shell cat release/FEC_BUILD_TAGS)
+.PHONY: fec_build fec_test
+fec_build:
+	mkdir -p dist
+	CGO_ENABLED=0 go build -trimpath -tags "$(FEC_TAGS)" -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=$(shell cat release/FEC_VERSION)" -o dist/fecbox ./cmd/sing-box
+
+fec_test:
+	go test -race ./transport/fec
+	go test -tags with_wireguard,with_gvisor ./transport/wireguard ./protocol/wireguard ./internal/fecintegration
+	go test ./include
+
 build:
 	export GOTOOLCHAIN=local && \
 	go build $(MAIN_PARAMS) $(MAIN)

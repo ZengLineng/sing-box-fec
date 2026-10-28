@@ -1,31 +1,32 @@
-# sing-box
+# FECBox
 
-The universal proxy platform.
+基于 [SagerNet/sing-box](https://github.com/SagerNet/sing-box) 的独立维护分支，增加与 `wireguard` 并列的 `wireguard-fec` Endpoint，把 WireGuard 加密和 Reed–Solomon UDP 丢包恢复编译进同一个核心。
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/sing-box.svg)](https://repology.org/project/sing-box/versions)
+这不是 SagerNet 官方发行版。上游基线 **v1.14.3**，分支版本见 [release/FEC_VERSION](release/FEC_VERSION)。保留上游 Go 模块路径及 libbox API，发行程序名为 `fecbox`。
 
-## Documentation
+```text
+应用 → 本地 mixed/TUN → SOCKS outbound（detour: fec-link）
+     → wireguard-fec → UDP 网络 → wireguard-fec
+     → Linux 隧道地址上的 SOCKS 入口 → 系统 TCP/UDP socket → 网站
+```
 
-https://sing-box.sagernet.org
+服务端的两段 TCP 连接使用 Linux 内核网络栈，FEC 修复外层 UDP 丢包；二者可以叠加。客户端 `system: false` 的隧道连接仍使用上游 gVisor。FEC 不替代拥塞控制，也不保证任意线路必然提速。
+
+- [配置与客户端准备](docs/fec/USAGE.md)
+- [线格式和实现边界](docs/fec/PROTOCOL.md)
+- [上游同步与验证范围](UPSTREAM.md)
+- [客户端模板](examples/wireguard-fec/client.json)、[Linux 系统出口模板](examples/wireguard-fec/server-native.json)
+
+```sh
+make fec_build
+./dist/fecbox version
+make fec_test
+```
+
+[GitHub Actions](https://github.com/ZengLineng/sing-box-fec/actions/workflows/fec.yml) 生成 Linux / Windows / macOS 的 amd64、arm64 CLI，以及 Android `libbox.aar` 和 Apple `Libbox.xcframework`。SDK 编译通过与手机实机验收是不同阶段，当前不发布签名手机应用。
+
+两端均须使用此分支；普通 WireGuard、官方 App、UDPspeeder 不识别新线格式。原有 `wireguard` 类型保持上游协议。
 
 ## License
 
-```
-Copyright (C) 2022 by nekohasekai <contact-sagernet@sekai.icu>
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program. If not, see <http://www.gnu.org/licenses/>.
-
-In addition, no derivative work may use the name or imply association
-with this application without prior consent.
-```
+继承上游 [LICENSE](LICENSE) 中的 GPL-3.0-or-later 和附加名称条款。上游版权属于原作者，本分支不暗示官方关联。Reed–Solomon 来自 MIT 授权的 [klauspost/reedsolomon](https://github.com/klauspost/reedsolomon)。分发二进制时应提供对应源码、构建方式及版权说明。

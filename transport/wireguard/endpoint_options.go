@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/sagernet/sing-box/transport/fec"
 	"github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/control"
 	"github.com/sagernet/sing/common/logger"
@@ -13,6 +14,7 @@ import (
 )
 
 type EndpointOptions struct {
+	FEC          *fec.Config
 	Context      context.Context
 	Logger       logger.ContextLogger
 	System       bool

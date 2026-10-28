@@ -1,0 +1,81 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "https",
+        "tag": "public-dns",
+        "server": "1.1.1.1",
+        "path": "/dns-query",
+        "tls": {
+          "enabled": true,
+          "server_name": "cloudflare-dns.com"
+        }
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "type": "wireguard-fec",
+      "tag": "fec-link",
+      "system": true,
+      "name": "fecwg0",
+      "mtu": 1280,
+      "address": [
+        "10.79.0.1/24"
+      ],
+      "private_key": "SERVER_PRIVATE_KEY",
+      "listen_port": 51820,
+      "peers": [
+        {
+          "public_key": "CLIENT_PUBLIC_KEY",
+          "allowed_ips": [
+            "10.79.0.2/32"
+          ]
+        }
+      ],
+      "fec": {
+        "key": "SHARED_FEC_KEY",
+        "data_shards": 10,
+        "parity_shards": 2,
+        "interval": "20ms",
+        "mtu": 1400
+      }
+    }
+  ],
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "native-socks",
+      "listen": "10.79.0.1",
+      "listen_port": 18080,
+      "users": [
+        {
+          "username": "fec-user",
+          "password": "SOCKS_PASSWORD"
+        }
+      ]
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "native-direct"
+    }
+  ],
+  "route": {
+    "default_domain_resolver": "public-dns",
+    "rules": [
+      {
+        "inbound": [
+          "native-socks"
+        ],
+        "ip_is_private": true,
+        "action": "reject"
+      }
+    ],
+    "final": "native-direct"
+  }
+}

@@ -1,0 +1,139 @@
+name: FECBox
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+    branches: [main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fec-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.8
+      - name: Test framing, loss recovery, lifecycle and full proxy chain
+        shell: bash
+        run: |
+          go test -race ./transport/fec
+          go test -tags with_wireguard,with_gvisor ./transport/wireguard ./protocol/wireguard ./internal/fecintegration
+      - name: Check build without WireGuard
+        run: go test ./include
+      - name: Fuzz authenticated frame parser
+        if: runner.os == 'Linux'
+        run: go test ./transport/fec -run '^$' -fuzz FuzzAuthenticatedFrameParser -fuzztime 15s
+
+  cli:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, windows, darwin]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.8
+      - name: Build portable core
+        shell: bash
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
+        run: |
+          extension=''
+          if [[ "$GOOS" == windows ]]; then extension='.exe'; fi
+          mkdir -p dist
+          go build -trimpath -tags "$(cat release/FEC_BUILD_TAGS)" \
+            -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=$(cat release/FEC_VERSION)" \
+            -o "dist/fecbox-$GOOS-$GOARCH$extension" ./cmd/sing-box
+          cp LICENSE README.md dist/
+          if [[ "$GOOS/$GOARCH" == linux/amd64 ]]; then
+            dist/fecbox-linux-amd64 schema -o dist/schema.json
+          fi
+          sha256sum dist/fecbox-* > dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fecbox-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+
+  android:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.8
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r28
+      - name: Install pinned upstream binding generator
+        run: make lib_install
+      - name: Build Android AAR for arm, arm64, 386 and amd64
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          mkdir -p dist
+          "$(go env GOPATH)/bin/gomobile" bind -target android -androidapi 24 \
+            -javapkg io.nekohasekai -libname box -o dist/libbox.aar \
+            -trimpath -tags "$(cat release/FEC_BUILD_TAGS)" \
+            -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=$(cat release/FEC_VERSION)" \
+            ./experimental/libbox
+          cp LICENSE dist/
+          sha256sum dist/libbox.aar > dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fecbox-android-libbox
+          path: dist/
+          if-no-files-found: error
+
+  apple:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.8
+      - name: Install pinned upstream binding generator
+        run: make lib_install
+      - name: Build unsigned iOS, simulator and macOS SDK
+        run: |
+          mkdir -p dist
+          "$(go env GOPATH)/bin/gomobile" bind -target ios,iossimulator,macos \
+            -iosversion 15.0 -macosversion 13.0 -libname box \
+            -trimpath -tags "$(cat release/FEC_BUILD_TAGS)" \
+            -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=$(cat release/FEC_VERSION)" \
+            ./experimental/libbox
+          tar -czf dist/Libbox.xcframework.tar.gz Libbox.xcframework
+          cp LICENSE dist/
+          shasum -a 256 dist/Libbox.xcframework.tar.gz > dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fecbox-apple-libbox
+          path: dist/
+          if-no-files-found: error

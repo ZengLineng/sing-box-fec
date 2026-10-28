@@ -31,3 +31,16 @@ type WireGuardPeer struct {
 	PersistentKeepaliveInterval uint16                           `json:"persistent_keepalive_interval,omitempty"`
 	Reserved                    []uint8                          `json:"reserved,omitempty"`
 }
+
+type WireGuardFECEndpointOptions struct {
+	WireGuardEndpointOptions
+	FEC WireGuardFECOptions `json:"fec"`
+}
+
+type WireGuardFECOptions struct {
+	Key          string             `json:"key"`
+	DataShards   int                `json:"data_shards,omitempty"`
+	ParityShards int                `json:"parity_shards,omitempty"`
+	Interval     badoption.Duration `json:"interval,omitempty"`
+	MTU          int                `json:"mtu,omitempty"`
+}
