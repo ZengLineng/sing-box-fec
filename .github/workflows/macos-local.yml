@@ -1,0 +1,61 @@
+name: macOS upstream GUI (local self-signing)
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Attach the verified self-signed DMG to the existing release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.8
+      - name: Test private configuration and native backend lifecycle
+        run: go test -race -tags with_wireguard,with_gvisor ./cmd/fecbox-local
+      - name: Download and verify the released FEC SDK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir sdk-download sdk
+          version="$(cat release/FEC_VERSION)"
+          gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern "fecbox-$version-apple-libbox.tar.gz" --pattern SHA256SUMS --dir sdk-download
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, tarfile
+          version = Path('release/FEC_VERSION').read_text().strip()
+          name = f'fecbox-{version}-apple-libbox.tar.gz'
+          sums = dict(line.split('  ', 1)[::-1] for line in Path('sdk-download/SHA256SUMS').read_text().splitlines())
+          archive = Path('sdk-download') / name
+          assert hashlib.sha256(archive.read_bytes()).hexdigest() == sums[name]
+          with tarfile.open(archive) as source:
+              source.extractall('sdk', filter='data')
+          PY
+      - name: Build and self-sign the original GUI
+        run: |
+          python3 release/build_macos_local.py --sdk "sdk/fecbox-$(cat release/FEC_VERSION)-apple-libbox/Libbox.xcframework" --output macos-local
+          mkdir dist
+          cp macos-local/*.dmg macos-local/*.sha256 macos-local/*BUILDINFO.json dist/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fecbox-macos-local
+          path: |
+            dist/
+            macos-local/xcodebuild.log
+          if-no-files-found: warn
+      - name: Publish the local-use DMG
+        if: inputs.publish == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "v$(cat release/FEC_VERSION)" dist/* --repo "$GITHUB_REPOSITORY"
