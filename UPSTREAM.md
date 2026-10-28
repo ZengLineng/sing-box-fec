@@ -12,7 +12,7 @@
 | `cmd/sing-box/cmd*.go` | CLI 展示名称改为 FECBox |
 | `release/FEC_*`, `.github/workflows/fec.yml` | 版本及跨平台 CLI/SDK 构建 |
 
-常规 `wireguard` 不启用 FEC。WireGuard 配置错误不再输出含私钥的 IPC 原文。上游发布工作流原样保存在 `.github/upstream-workflows/`，不执行其发布、签名、镜像或 stale 定时任务。客户端子模块仍指向基线锁定的上游工程，当前不声称维护并签名了三套 GUI。
+常规 `wireguard` 不启用 FEC。WireGuard 配置错误不再输出含私钥的 IPC 原文。上游发布工作流原样保存在 `.github/upstream-workflows/`，不执行其发布、签名、镜像或 stale 定时任务。Android 子模块指向自维护的 `ZengLineng/fecbox-android`，保留上游 namespace 与 libbox API，以独立 applicationId 和持久签名构建 APK。Apple/desktop 客户端仍是上游基线；不发布 iOS App。
 
 ## 更新流程
 
@@ -30,3 +30,11 @@ CI 在 Linux / Windows / macOS 上执行认证、畸形帧、恢复、内存边�
 成功 SDK 只证明编译与绑定通过。手机发布仍需重建 App、签名、VPN 权限、设备联网、切网、休眠恢复、MTU、耗电验收。首次实测保持独立端口/身份/网段，保留原 VPN，记录相同时段、目标、字节数、丢包率、CPU 的对照；旧 UDPspeeder 结果不属于新实现。
 
 分发使用 `fecbox` 名称，保留 GPL 和第三方授权，提供与二进制 commit 对应的源码。Actions 仅上传产物和 SHA-256，不使用官方发布凭据与签名身份。
+
+## Release 和 Android 签名
+
+在 GitHub Actions 手动运行 **FECBox Release**，或推送与 `release/FEC_VERSION` 一致的 `v*-fec.*` 标签。流水线复用核心构建，在 Android AAR 完成后立即构建 APK，待全部检查成功后发布 Release。已经发布的版本不可覆盖；更新时修改版本号。
+
+签名密钥以仓库 Secrets `FECBOX_ANDROID_KEYSTORE_B64` 和 `FECBOX_ANDROID_KEYSTORE_PASSWORD` 提供。私钥只在签名任务中落盘，任务结束删除；保持同一密钥才能原地升级 Android App。Android APK 的 applicationId 是 `dev.zenglineng.fecbox`，使用自己的更新源和签名，可与官方客户端并存。
+
+Linux x86_64 的长期服务模板见 `deploy/fecbox.service`，读取 `/etc/fecbox/server.json` credential。启动前检查实际挂载的双向 cgroup IP 过滤器；模板保留隧道客户端地址作为回包例外，保护私网目的地址。其他服务器架构须先适配 BPF 查询 ABI。原版 VPN 和 FEC 版采用独立服务、端口、身份和网段。

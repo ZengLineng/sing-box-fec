@@ -1,0 +1,22 @@
+[Unit]
+Description=FECBox WireGuard FEC with native SOCKS egress
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+DynamicUser=yes
+LoadCredential=config.json:/etc/fecbox/server.json
+ExecStartPre=+/usr/bin/python3 /usr/local/libexec/fecbox/require-cgroup-ip-filter.py
+ExecStart=/usr/local/bin/fecbox run -c %d/config.json
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+DeviceAllow=/dev/net/tun rw
+PrivateDevices=no
+Restart=on-failure
+RestartSec=3
+IPAccounting=yes
+IPAddressAllow=10.79.0.2/32
+IPAddressDeny=0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 192.0.0.0/24 192.0.2.0/24 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4 ::/0
+
+[Install]
+WantedBy=multi-user.target

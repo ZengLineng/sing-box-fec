@@ -1,5 +1,9 @@
 # 配置与客户端准备
 
+Android 用户从 [Releases](https://github.com/ZengLineng/sing-box-fec/releases) 下载匹配架构的 FECBox APK，或下载 universal APK。安装后导入私有配置；[client-android.json](../../examples/wireguard-fec/client-android.json) 是完整 TUN 模板，需填入独立身份和服务器信息。应用标识 `dev.zenglineng.fecbox`，可与官方客户端并存。安装不会自动连接 VPN。
+
+CI/CD 会签名并发布 Android App；iOS App 暂不提供，Apple XCFramework 仍作为 SDK。
+
 从 [client.json](../../examples/wireguard-fec/client.json) 和 [server-native.json](../../examples/wireguard-fec/server-native.json) 开始，它们是需填入密钥的模板。
 
 1. 两端分别运行 `fecbox generate wg-keypair`，填入自己的私钥和对端公钥。独立通道使用新身份。
@@ -56,7 +60,7 @@ curl --proxy socks5h://127.0.0.1:17890 https://www.google.com/generate_204
 | 平台 | 产物 | 接入 |
 | --- | --- | --- |
 | Windows / Linux / macOS | amd64、arm64 `fecbox` | 先显式使用本地代理；全局 TUN 另行配置验收 |
-| Android | `libbox.aar`，API 24+，arm/arm64/386/amd64 | 用此核心重建兼容上游 libbox API 的客户端 |
+| Android | 已签名 FECBox APK，API 24+，四种架构及 universal；另有 AAR | 安装 APK 后导入 Android 配置 |
 | iOS / macOS | `Libbox.xcframework`，iOS 15+ / macOS 13+ | 用此核心重建客户端与 Network Extension |
 
 官方 App 仅导入 JSON 不能支持新协议。移动端仍需客户端工程、VPN 权限、签名和安装渠道；Apple Network Extension entitlement 与设备测试需要开发者账号和设备。SDK 编译成功不代表漫游、休眠恢复和耗电已经实测。

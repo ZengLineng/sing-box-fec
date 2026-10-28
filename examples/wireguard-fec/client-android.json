@@ -1,0 +1,89 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": [
+        "172.19.0.1/30",
+        "fdfe:dcba:9876::1/126"
+      ],
+      "mtu": 1500,
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "mixed"
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "wireguard-fec",
+      "tag": "fec-link",
+      "system": false,
+      "mtu": 1280,
+      "address": [
+        "10.79.0.2/24"
+      ],
+      "private_key": "CLIENT_PRIVATE_KEY",
+      "peers": [
+        {
+          "address": "203.0.113.10",
+          "port": 51820,
+          "public_key": "SERVER_PUBLIC_KEY",
+          "allowed_ips": [
+            "10.79.0.1/32"
+          ],
+          "persistent_keepalive_interval": 25
+        }
+      ],
+      "fec": {
+        "key": "SHARED_FEC_KEY",
+        "data_shards": 10,
+        "parity_shards": 2,
+        "interval": "20ms",
+        "mtu": 1400
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "socks",
+      "tag": "native-exit",
+      "server": "10.79.0.1",
+      "server_port": 18080,
+      "version": "5",
+      "username": "fec-user",
+      "password": "SOCKS_PASSWORD",
+      "detour": "fec-link"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "port": 53,
+        "action": "hijack-dns"
+      }
+    ],
+    "final": "native-exit",
+    "auto_detect_interface": true,
+    "default_domain_resolver": "remote-dns"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "https",
+        "tag": "remote-dns",
+        "server": "1.1.1.1",
+        "path": "/dns-query",
+        "tls": {
+          "enabled": true,
+          "server_name": "cloudflare-dns.com"
+        },
+        "detour": "native-exit"
+      }
+    ],
+    "strategy": "ipv4_only",
+    "final": "remote-dns"
+  }
+}

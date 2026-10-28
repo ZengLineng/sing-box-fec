@@ -66,7 +66,10 @@
     }
   ],
   "route": {
-    "default_domain_resolver": "public-dns",
+    "default_domain_resolver": {
+      "server": "public-dns",
+      "strategy": "ipv4_only"
+    },
     "rules": [
       {
         "inbound": [

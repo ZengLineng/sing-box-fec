@@ -121,7 +121,7 @@ func TestExampleConfigurations(t *testing.T) {
 	clientKey, clientPublic := keyPair(t)
 	secret := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x73}, 32))
 	replace := strings.NewReplacer("SERVER_PRIVATE_KEY", serverKey, "SERVER_PUBLIC_KEY", serverPublic, "CLIENT_PRIVATE_KEY", clientKey, "CLIENT_PUBLIC_KEY", clientPublic, "SHARED_FEC_KEY", secret, "SOCKS_PASSWORD", "test-only-password")
-	for _, file := range []string{"client", "server-native"} {
+	for _, file := range []string{"client", "client-android", "server-native"} {
 		t.Run(file, func(t *testing.T) {
 			content, err := os.ReadFile("../../examples/wireguard-fec/" + file + ".json")
 			if err != nil {

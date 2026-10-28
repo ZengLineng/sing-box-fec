@@ -1,0 +1,110 @@
+name: Android App
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_run_id:
+        description: Successful FECBox build containing fecbox-android-libbox
+        type: number
+        required: true
+        default: 40659117972
+  workflow_call:
+    inputs:
+      core_run_id:
+        type: number
+        required: true
+    secrets:
+      FECBOX_ANDROID_KEYSTORE_B64:
+        required: true
+      FECBOX_ANDROID_KEYSTORE_PASSWORD:
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+      - name: Checkout pinned Android client
+        run: git submodule update --init --depth 1 clients/android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r28
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+        with:
+          cache-provider: basic
+      - uses: actions/download-artifact@v4
+        with:
+          name: fecbox-android-libbox
+          path: android-core
+          run-id: ${{ inputs.core_run_id }}
+          github-token: ${{ github.token }}
+      - name: Prepare core, version and persistent signing identity
+        env:
+          KEYSTORE_B64: ${{ secrets.FECBOX_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.FECBOX_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, re, shutil
+          from pathlib import Path
+          version = Path('release/FEC_VERSION').read_text().strip()
+          major, minor, patch, fec = map(int, re.fullmatch(r'(\d+)\.(\d+)\.(\d+)-fec\.(\d+)', version).groups())
+          assert major < 2000 and max(minor, patch, fec) < 100
+          code = major * 1000000 + minor * 10000 + patch * 100 + fec
+          client = Path('clients/android')
+          (client / 'app/libs').mkdir(exist_ok=True)
+          shutil.copyfile('android-core/libbox.aar', client / 'app/libs/libbox.aar')
+          (client / 'version.properties').write_text(f'VERSION_CODE={code}\nVERSION_NAME={version}\nGO_VERSION=go1.26.8\n')
+          key = client / 'app/release.keystore'
+          key.write_bytes(base64.b64decode(os.environ['KEYSTORE_B64'], validate=True))
+          key.chmod(0o600)
+          password = os.environ['KEYSTORE_PASSWORD']
+          assert password and '\n' not in password
+          props = client / 'local.properties'
+          props.write_text(f'KEYSTORE_PASS={password}\nALIAS_NAME=fecbox\nALIAS_PASS={password}\n')
+          props.chmod(0o600)
+          PY
+      - name: Build signed APKs
+        working-directory: clients/android
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: ./gradlew --no-daemon --build-cache --parallel :app:assembleOtherRelease
+      - name: Verify package, signature, native FEC and version
+        run: |
+          mkdir -p dist
+          cp clients/android/app/build/outputs/apk/other/release/*.apk dist/
+          APK=$(find dist -name '*-universal.apk' -print -quit)
+          test -n "$APK"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest application-id "$APK" > dist/application-id.txt
+          test "$(cat dist/application-id.txt)" = dev.zenglineng.fecbox
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest version-code "$APK" > dist/version-code.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, zipfile
+          apk = next(Path('dist').glob('*-universal.apk'))
+          with zipfile.ZipFile(apk) as archive:
+              for abi in ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']:
+                  assert b'wireguard-fec' in archive.read(f'lib/{abi}/libbox.so'), abi
+          Path('dist/FECBox-version-metadata.json').write_text(json.dumps({'version_code': int(Path('dist/version-code.txt').read_text())}) + '\n')
+          PY
+          cp clients/android/LICENSE dist/ANDROID_LICENSE
+          git -C clients/android rev-parse HEAD > dist/ANDROID_SOURCE_COMMIT
+          sha256sum dist/*.apk > dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fecbox-android-app
+          path: dist/
+          if-no-files-found: error
+      - name: Remove signing files
+        if: always()
+        run: rm -f clients/android/app/release.keystore clients/android/local.properties
