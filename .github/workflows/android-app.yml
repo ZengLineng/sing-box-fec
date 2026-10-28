@@ -5,13 +5,13 @@ on:
     inputs:
       core_run_id:
         description: Successful FECBox build containing fecbox-android-libbox
-        type: number
+        type: string
         required: true
-        default: 40659117972
+        default: '40659117972'
   workflow_call:
     inputs:
       core_run_id:
-        type: number
+        type: string
         required: true
     secrets:
       FECBOX_ANDROID_KEYSTORE_B64:

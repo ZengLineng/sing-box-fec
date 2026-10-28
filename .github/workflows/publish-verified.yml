@@ -1,0 +1,110 @@
+name: Publish verified builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_run_id:
+        description: Successful FECBox core workflow run
+        type: string
+        required: true
+      apk_run_id:
+        description: Successful Android App workflow run for the same source commit
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      core_run_id:
+        type: string
+        required: true
+      apk_run_id:
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+      - name: Verify successful source builds
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CORE_RUN: ${{ inputs.core_run_id }}
+          APK_RUN: ${{ inputs.apk_run_id }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, re, subprocess
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', path], text=True))
+          repo = os.environ['GITHUB_REPOSITORY']
+          builds = []
+          for run in [os.environ['CORE_RUN'], os.environ['APK_RUN']]:
+              assert run.isdigit()
+              build = api(f'repos/{repo}/actions/runs/{run}')
+              assert build['head_repository']['full_name'] == repo
+              assert build['conclusion'] == 'success' or run == os.environ['GITHUB_RUN_ID'], build['conclusion']
+              builds.append(build)
+          assert builds[0]['head_sha'] == builds[1]['head_sha'], 'Core and APK source commits differ'
+          sha = builds[0]['head_sha']
+          assert re.fullmatch('[0-9a-f]{40}', sha)
+          content = api(f'repos/{repo}/contents/release/FEC_VERSION?ref={sha}')
+          version = base64.b64decode(content['content']).decode().strip()
+          assert re.fullmatch(r'\d+\.\d+\.\d+-fec\.\d+', version)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'sha={sha}\nversion={version}\n')
+          with open('source-manifest.json', 'w') as output:
+              json.dump({'core_commit': sha, 'core_build': builds[0]['html_url'], 'android_build': builds[1]['html_url']}, output, indent=2)
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fecbox-*
+          path: artifacts
+          run-id: ${{ inputs.core_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: fecbox-android-app
+          path: artifacts/fecbox-android-app
+          run-id: ${{ inputs.apk_run_id }}
+          github-token: ${{ github.token }}
+      - name: Package verified core and Android App
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          python3 -m unittest discover -s release -p '*_test.py'
+          python3 release/package_fec.py --artifacts artifacts --output release-assets --version "$VERSION"
+          cp source-manifest.json release-assets/SOURCE_MANIFEST.json
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          root = Path('release-assets')
+          sums = []
+          for path in sorted(root.iterdir()):
+              if path.name in ['SHA256SUMS', 'RELEASE_NOTES.md']:
+                  continue
+              with path.open('rb') as source:
+                  sums.append(f'{hashlib.file_digest(source, "sha256").hexdigest()}  {path.name}')
+          (root / 'SHA256SUMS').write_text('\n'.join(sums) + '\n')
+          PY
+      - name: Publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.source.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          tag="v$VERSION"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo 'Tag does not match the compiled source version' >&2
+            exit 1
+          fi
+          if gh release view "$tag" --json isDraft > release-state.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("release-state.json"))["isDraft"], "Published releases are immutable; bump FEC_VERSION"'
+          else
+            gh release create "$tag" --target "$SOURCE_SHA" --title "FECBox $VERSION" --draft --prerelease --notes-file release-assets/RELEASE_NOTES.md
+          fi
+          gh release upload "$tag" release-assets/* --clobber
+          gh release edit "$tag" --draft=false --prerelease=true

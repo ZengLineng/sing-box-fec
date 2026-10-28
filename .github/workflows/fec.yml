@@ -9,6 +9,11 @@ on:
     paths-ignore: ['**.md']
   workflow_dispatch:
   workflow_call:
+    secrets:
+      FECBOX_ANDROID_KEYSTORE_B64:
+        required: false
+      FECBOX_ANDROID_KEYSTORE_PASSWORD:
+        required: false
 
 permissions:
   contents: read

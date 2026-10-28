@@ -67,6 +67,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--version")
     args = parser.parse_args()
-    version = (Path(__file__).parent / "FEC_VERSION").read_text().strip()
+    version = args.version or (Path(__file__).parent / "FEC_VERSION").read_text().strip()
     package(args.artifacts, args.output, version)
