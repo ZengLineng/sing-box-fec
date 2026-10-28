@@ -58,14 +58,14 @@ func TestPrivateConfiguration(t *testing.T) {
 }
 
 func TestLocalLifecycle(t *testing.T) {
-	testLifecycle(t, `{"outbounds":[{"type":"direct","tag":"direct"}]}`)
+	testLifecycle(t, `{"outbounds":[{"type":"direct","tag":"direct"}]}`, "")
 }
 
 func TestNativeTUN(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("native utun requires administrator privileges; exercised on the macOS CI runner")
 	}
-	testLifecycle(t, `{"inbounds":[{"type":"tun","tag":"local-tun","address":["172.31.254.1/30"],"auto_route":false,"stack":"system"}],"outbounds":[{"type":"direct","tag":"direct"}]}`)
+	testLifecycle(t, `{"inbounds":[{"type":"tun","tag":"local-tun","address":["172.31.254.1/30"],"auto_route":false,"dns_mode":"native","stack":"system"}],"outbounds":[{"type":"direct","tag":"direct"}]}`, "172.31.254.2")
 }
 
 func TestWithdrawnConfigurationStopsBackend(t *testing.T) {
@@ -104,8 +104,9 @@ func TestWithdrawnConfigurationStopsBackend(t *testing.T) {
 	}
 }
 
-func testLifecycle(t *testing.T, config string) {
+func testLifecycle(t *testing.T, config, wantDNS string) {
 	t.Helper()
+	beforeDNS := readSystemDNS(t)
 	// Darwin's Unix socket path is shorter than the usual Go test directory.
 	base, err := os.MkdirTemp("/tmp", "fecbox-local-test-")
 	if err != nil {
@@ -144,6 +145,14 @@ func testLifecycle(t *testing.T, config string) {
 	if err != nil || info.Mode().Perm() != 0o600 || started.StartedAt <= 0 {
 		t.Fatalf("invalid socket permissions or startup: %v %v", info, err)
 	}
+	deadline := time.Now().Add(5 * time.Second)
+	for wantDNS != "" && !strings.Contains(readSystemDNS(t), "nameserver[0] : "+wantDNS) {
+		if time.Now().After(deadline) {
+			t.Fatal("backend did not publish its TUN DNS server")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	runningDNS := readSystemDNS(t)
 	managed := daemon.NewManagedServiceClient(connection)
 	if err = os.WriteFile(path, []byte(`{"invalid_option":true}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -154,6 +163,9 @@ func testLifecycle(t *testing.T, config string) {
 	stillStarted, err := client.GetStartedAt(ctx, &emptypb.Empty{})
 	if err != nil || stillStarted.StartedAt != started.StartedAt {
 		t.Fatal("invalid reload interrupted the running engine")
+	}
+	if readSystemDNS(t) != runningDNS {
+		t.Fatal("invalid reload changed the system DNS")
 	}
 	if err = os.WriteFile(path, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
@@ -174,5 +186,12 @@ func testLifecycle(t *testing.T, config string) {
 	}
 	if _, err = os.Lstat(socket); !os.IsNotExist(err) {
 		t.Fatal("backend left its socket behind")
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for readSystemDNS(t) != beforeDNS {
+		if time.Now().After(deadline) {
+			t.Fatal("backend did not restore the system DNS")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

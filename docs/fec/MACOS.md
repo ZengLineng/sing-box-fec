@@ -4,6 +4,8 @@ FECBox 复用 SFM 的 SwiftUI 界面，包括配置管理、仪表盘、出站�
 
 本机版使用 ad-hoc 签名，不需要 Apple Developer ID，也不做公证。它不加载 Apple VPN 扩展，而是启动同包内的 `fecbox-local` 后端，直接使用 sing-box 核心的原生 macOS utun。导入 mixed/SOCKS 配置时以当前用户运行；导入 TUN 或 `system: true` Endpoint 配置时，点击启动会显示 macOS 管理员授权对话框。
 
+TUN 启用 DNS（`auto_route: true` 默认启用）时，后端向 macOS 注册临时的默认 DNS 解析器，地址沿用 TUN 的 `dns_address` 或接口的下一个地址。解析由配置中的 DNS 规则处理，避免继续使用路由器的受污染解析。停止、重载或进程退出后，系统自动移除该解析器；Wi-Fi 的永久 DNS 设置不变。纯 mixed/SOCKS 配置和 `dns_mode: "disabled"` 不接管系统 DNS。
+
 ## 使用
 
 1. 下载名称含 `macos-universal-local.dmg` 的包并校验旁边的 SHA-256，将 FECBox.app 拖到 Applications。

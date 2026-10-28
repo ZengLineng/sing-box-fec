@@ -40,7 +40,7 @@ jobs:
         run: |
           go test -race -tags with_wireguard,with_gvisor ./cmd/fecbox-local
           go test -c -tags with_wireguard,with_gvisor -o "$RUNNER_TEMP/local-backend-tests" ./cmd/fecbox-local
-          sudo -n "$RUNNER_TEMP/local-backend-tests" -test.run '^TestNativeTUN$' -test.v
+          sudo -n "$RUNNER_TEMP/local-backend-tests" -test.run '^Test(NativeTUN|SystemDNS)$' -test.v
       - uses: actions/download-artifact@v4
         if: inputs.core_run_id != ''
         with:

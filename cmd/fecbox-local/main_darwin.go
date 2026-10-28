@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -29,8 +30,11 @@ const maxConfigSize = 2 << 20
 
 type localService struct {
 	service *daemon.StartedService
+	ctx     context.Context
 	base    string
 	uid     int
+	access  sync.Mutex
+	dns     *dnsSession
 	done    chan struct{}
 	once    sync.Once
 }
@@ -138,6 +142,7 @@ func run(base string, parent, uid, gid int) error {
 	ctx = box.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry(), include.DNSTransportRegistry(), include.ServiceRegistry(), include.CertificateProviderRegistry())
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	handler := &localService{ctx: ctx, base: base, uid: uid, done: make(chan struct{})}
 	go func() {
 		watchdog := time.NewTicker(time.Second)
 		defer watchdog.Stop()
@@ -146,6 +151,21 @@ func run(base string, parent, uid, gid int) error {
 			case <-ctx.Done():
 				return
 			case <-watchdog.C:
+				handler.access.Lock()
+				dnsFailed := false
+				if handler.dns != nil {
+					select {
+					case <-handler.dns.done:
+						dnsFailed = true
+					default:
+					}
+				}
+				handler.access.Unlock()
+				if dnsFailed {
+					fmt.Fprintln(os.Stderr, "macOS DNS session exited unexpectedly; stopping TUN")
+					cancel()
+					return
+				}
 				// shortcut: follow the GUI pid; use a launchd lease if persistent background service is added.
 				_, leaseErr := os.Lstat(filepath.Join(base, "local-config.json"))
 				if syscall.Kill(parent, 0) != nil || leaseErr != nil {
@@ -155,11 +175,10 @@ func run(base string, parent, uid, gid int) error {
 			}
 		}
 	}()
-	handler := &localService{base: base, uid: uid, done: make(chan struct{})}
 	handler.service = daemon.NewStartedService(daemon.ServiceOptions{Context: ctx, Handler: handler, LogMaxLines: 3000})
 	defer handler.service.Close()
-	defer handler.service.CloseService()
-	if err = handler.service.StartOrReloadService(ctx, config, nil); err != nil {
+	defer handler.closeService()
+	if err = handler.startService(ctx, config); err != nil {
 		return err
 	}
 	server := grpc.NewServer(grpc.ChainUnaryInterceptor(daemon.UnaryLocaleInterceptor), grpc.ChainStreamInterceptor(daemon.StreamLocaleInterceptor))
@@ -179,7 +198,7 @@ func run(base string, parent, uid, gid int) error {
 }
 
 func (s *localService) ServiceStop() error {
-	err := s.service.CloseService()
+	err := s.closeService()
 	s.once.Do(func() { time.AfterFunc(200*time.Millisecond, func() { close(s.done) }) })
 	return err
 }
@@ -189,10 +208,42 @@ func (s *localService) ServiceReload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	return s.startService(ctx, config)
+}
+
+func (s *localService) startService(ctx context.Context, config string) error {
+	s.access.Lock()
+	defer s.access.Unlock()
+	addresses, err := tunDNSAddresses(s.ctx, config)
+	if err != nil {
+		return err
+	}
 	if err = s.service.CheckConfig(ctx, config); err != nil {
 		return err
 	}
-	return s.service.StartOrReloadService(ctx, config, nil)
+	if err = s.dns.Close(); err != nil {
+		return err
+	}
+	s.dns = nil
+	if err = s.service.StartOrReloadService(ctx, config, nil); err != nil {
+		return err
+	}
+	s.dns, err = startDNS(s.ctx, addresses)
+	if err != nil {
+		return errors.Join(err, s.service.CloseService())
+	}
+	if s.dns != nil {
+		fmt.Fprintln(os.Stderr, "macOS DNS managed by FECBox:", addresses)
+	}
+	return nil
+}
+
+func (s *localService) closeService() error {
+	s.access.Lock()
+	defer s.access.Unlock()
+	err := s.dns.Close()
+	s.dns = nil
+	return errors.Join(err, s.service.CloseService())
 }
 
 func (*localService) SystemProxyStatus() (*daemon.SystemProxyStatus, error) {
