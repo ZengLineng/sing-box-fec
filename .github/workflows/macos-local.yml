@@ -7,39 +7,72 @@ on:
         description: Attach the verified self-signed DMG to the existing release
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      core_run_id:
+        type: string
+        default: ''
+      publish:
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   dmg:
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-        with:
-          submodules: recursive
+      - name: Check out the pinned Apple GUI
+        run: git submodule update --init --recursive clients/apple
       - uses: actions/setup-go@v5
         with:
           go-version: 1.26.8
       - name: Test private configuration and native backend lifecycle
-        run: go test -race -tags with_wireguard,with_gvisor ./cmd/fecbox-local
+        run: |
+          go test -race -tags with_wireguard,with_gvisor ./cmd/fecbox-local
+          go test -c -tags with_wireguard,with_gvisor -o "$RUNNER_TEMP/local-backend-tests" ./cmd/fecbox-local
+          sudo -n "$RUNNER_TEMP/local-backend-tests" -test.run '^TestNativeTUN$' -test.v
+      - uses: actions/download-artifact@v4
+        if: inputs.core_run_id != ''
+        with:
+          name: fecbox-apple-libbox
+          path: sdk-artifact
+          run-id: ${{ inputs.core_run_id }}
+          github-token: ${{ github.token }}
       - name: Download and verify the released FEC SDK
         env:
           GH_TOKEN: ${{ github.token }}
+          CORE_RUN: ${{ inputs.core_run_id }}
         run: |
           mkdir sdk-download sdk
           version="$(cat release/FEC_VERSION)"
-          gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern "fecbox-$version-apple-libbox.tar.gz" --pattern SHA256SUMS --dir sdk-download
+          if [[ -z "$CORE_RUN" ]]; then
+            gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern "fecbox-$version-apple-libbox.tar.gz" --pattern SHA256SUMS --dir sdk-download
+          fi
           python3 - <<'PY'
           from pathlib import Path
-          import hashlib, tarfile
+          import hashlib, os, shutil, tarfile
           version = Path('release/FEC_VERSION').read_text().strip()
-          name = f'fecbox-{version}-apple-libbox.tar.gz'
-          sums = dict(line.split('  ', 1)[::-1] for line in Path('sdk-download/SHA256SUMS').read_text().splitlines())
-          archive = Path('sdk-download') / name
-          assert hashlib.sha256(archive.read_bytes()).hexdigest() == sums[name]
-          with tarfile.open(archive) as source:
-              source.extractall('sdk', filter='data')
+          if os.environ.get('CORE_RUN'):
+              archive = Path('sdk-artifact/Libbox.xcframework.tar.gz')
+              expected = Path('sdk-artifact/SHA256SUMS').read_text().split()[0]
+              assert hashlib.sha256(archive.read_bytes()).hexdigest() == expected
+              with tarfile.open(archive) as source:
+                  source.extractall('sdk', filter='data')
+              destination = Path(f'sdk/fecbox-{version}-apple-libbox/Libbox.xcframework')
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              shutil.move('sdk/Libbox.xcframework', destination)
+          else:
+              name = f'fecbox-{version}-apple-libbox.tar.gz'
+              sums = dict(line.split('  ', 1)[::-1] for line in Path('sdk-download/SHA256SUMS').read_text().splitlines())
+              archive = Path('sdk-download') / name
+              assert hashlib.sha256(archive.read_bytes()).hexdigest() == sums[name]
+              with tarfile.open(archive) as source:
+                  source.extractall('sdk', filter='data')
           PY
       - name: Build and self-sign the original GUI
         run: |

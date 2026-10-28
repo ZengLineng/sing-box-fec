@@ -136,6 +136,25 @@ func run(base string, parent, uid, gid int) error {
 		return err
 	}
 	ctx = box.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry(), include.DNSTransportRegistry(), include.ServiceRegistry(), include.CertificateProviderRegistry())
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	go func() {
+		watchdog := time.NewTicker(time.Second)
+		defer watchdog.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-watchdog.C:
+				// shortcut: follow the GUI pid; use a launchd lease if persistent background service is added.
+				_, leaseErr := os.Lstat(filepath.Join(base, "local-config.json"))
+				if syscall.Kill(parent, 0) != nil || leaseErr != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
 	handler := &localService{base: base, uid: uid, done: make(chan struct{})}
 	handler.service = daemon.NewStartedService(daemon.ServiceOptions{Context: ctx, Handler: handler, LogMaxLines: 3000})
 	defer handler.service.Close()
@@ -149,28 +168,13 @@ func run(base string, parent, uid, gid int) error {
 	defer server.Stop()
 	serveError := make(chan error, 1)
 	go func() { serveError <- server.Serve(listener) }()
-	osSignals := make(chan os.Signal, 1)
-	signal.Notify(osSignals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(osSignals)
-	watchdog := time.NewTicker(time.Second)
-	defer watchdog.Stop()
-	for {
-		select {
-		case <-handler.done:
-			return nil
-		case <-osSignals:
-			return nil
-		case err = <-serveError:
-			return err
-		case <-watchdog.C:
-			// shortcut: follow the GUI pid; use a launchd lease if persistent background service is added.
-			if syscall.Kill(parent, 0) != nil {
-				return nil
-			}
-			if _, err = os.Lstat(filepath.Join(base, "local-config.json")); err != nil {
-				return nil
-			}
-		}
+	select {
+	case <-handler.done:
+		return nil
+	case <-ctx.Done():
+		return nil
+	case err = <-serveError:
+		return err
 	}
 }
 

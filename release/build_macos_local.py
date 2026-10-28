@@ -34,8 +34,14 @@ def build(sdk, output, architectures, packages=None):
     if packages:
         args += ["-clonedSourcePackagesDirPath", packages.resolve()]
     with (output / "xcodebuild.log").open("w") as log:
-        result = subprocess.run(list(map(str, args)), env=env, stdout=log, stderr=subprocess.STDOUT)
-    if result.returncode:
+        process = subprocess.Popen(list(map(str, args)), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in process.stdout:
+            log.write(line)
+            log.flush()
+            if any(marker in line for marker in ["Fetching", "Checking out", "Creating working copy", "error:", "warning:", "** BUILD"]):
+                print(line.rstrip(), flush=True)
+        result = process.wait()
+    if result:
         print((output / "xcodebuild.log").read_text()[-24000:])
         raise RuntimeError(f"Xcode build failed; see {output / 'xcodebuild.log'}")
     stage = output / "stage"
@@ -58,11 +64,14 @@ def build(sdk, output, architectures, packages=None):
     info_path = app / "Contents/Info.plist"
     info = plistlib.loads(info_path.read_bytes())
     info.update(CFBundleName="FECBox", CFBundleDisplayName="FECBox", FECBoxVersion=version)
+    info["CFBundleIconFile"] = "FECBox.icns"
+    info.pop("CFBundleIconName", None)
+    info.pop("CFBundleIcons", None)
     info.pop("NSUbiquitousContainers", None)
     info_path.write_bytes(plistlib.dumps(info))
     resources = app / "Contents/Resources"
     run("xcrun", "swift", root / "clients/macos-proxy/MakeIcon.swift", output / "FECBox.iconset")
-    run("iconutil", "-c", "icns", output / "FECBox.iconset", "-o", resources / "AppIcon.icns")
+    run("iconutil", "-c", "icns", output / "FECBox.iconset", "-o", resources / "FECBox.icns")
     for name in ["LICENSE", "docs/fec/THIRD_PARTY_NOTICES.txt"]:
         shutil.copyfile(root / name, resources / Path(name).name)
     shutil.copyfile(apple / "LICENSE", resources / "APPLE_GUI_LICENSE")
@@ -86,6 +95,11 @@ def build(sdk, output, architectures, packages=None):
     metadata = dict(version=version, core_source=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
                     apple_source=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=apple, text=True).strip(),
                     signing="ad-hoc", backend="native-utun", network_extension=False, notarized=False)
+    sdk_info = plistlib.loads((sdk / "Info.plist").read_bytes())
+    metadata["macos_libbox_sha256"] = {
+        library["LibraryIdentifier"]: hashlib.sha256((sdk / library["LibraryIdentifier"] / library["LibraryPath"] / "Libbox").read_bytes()).hexdigest()
+        for library in sdk_info["AvailableLibraries"] if library["SupportedPlatform"] == "macos"
+    }
     (output / (name.replace(".dmg", "-BUILDINFO.json"))).write_text(json.dumps(metadata, indent=2) + "\n")
     print(dmg)
 

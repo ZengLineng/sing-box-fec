@@ -24,7 +24,7 @@ make fec_build
 make fec_test
 ```
 
-[GitHub Actions](https://github.com/ZengLineng/sing-box-fec/actions/workflows/fec.yml) 生成 Linux / Windows / macOS 的 amd64、arm64 CLI，以及 Android `libbox.aar` 和 Apple `Libbox.xcframework`。[Release 流水线](.github/workflows/release-fec.yml) 同时构建并签名独立 Android APK，发布到 [GitHub Releases](https://github.com/ZengLineng/sing-box-fec/releases)。Android 源码维护在 [fecbox-android](https://github.com/ZengLineng/fecbox-android)，由本仓库子模块锁定。iOS App 暂不提供。macOS 提供 [FECBox Proxy 图形版 DMG](clients/macos-proxy/README.md)，使用本地 HTTP/SOCKS 代理模式。
+[GitHub Actions](https://github.com/ZengLineng/sing-box-fec/actions/workflows/fec.yml) 生成 Linux / Windows / macOS 的 amd64、arm64 CLI，以及 Android `libbox.aar` 和 Apple `Libbox.xcframework`。[Release 流水线](.github/workflows/release-fec.yml) 构建独立 Android APK 和 macOS DMG，发布到 [GitHub Releases](https://github.com/ZengLineng/sing-box-fec/releases)。Android 源码维护在 [fecbox-android](https://github.com/ZengLineng/fecbox-android)。macOS 使用 [fecbox-apple](https://github.com/ZengLineng/fecbox-apple) 中的原 SFM 界面和本地原生 TUN 后端，使用 ad-hoc 自签名；[本机使用与构建说明](docs/fec/MACOS.md)。子模块锁定客户端源码，不提供 iOS App。
 
 两端均须使用此分支；普通 WireGuard、官方 App、UDPspeeder 不识别新线格式。原有 `wireguard` 类型保持上游协议。
 

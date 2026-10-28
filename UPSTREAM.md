@@ -12,7 +12,7 @@
 | `cmd/sing-box/cmd*.go` | CLI 展示名称改为 FECBox |
 | `release/FEC_*`, `.github/workflows/fec.yml` | 版本及跨平台 CLI/SDK 构建 |
 
-常规 `wireguard` 不启用 FEC。WireGuard 配置错误不再输出含私钥的 IPC 原文。上游发布工作流原样保存在 `.github/upstream-workflows/`，不执行其发布、签名、镜像或 stale 定时任务。Android 子模块指向自维护的 `ZengLineng/fecbox-android`，保留上游 namespace 与 libbox API，以独立 applicationId 和持久签名构建 APK。Apple/desktop 客户端仍是上游基线；不发布 iOS App。
+常规 `wireguard` 不启用 FEC。WireGuard 配置错误不再输出含私钥的 IPC 原文。上游发布工作流原样保存在 `.github/upstream-workflows/`，不执行其发布、签名、镜像或 stale 定时任务。Android 子模块指向 `ZengLineng/fecbox-android`，保留上游 namespace 与 libbox API，以独立 applicationId 和持久签名构建 APK。Apple 子模块指向 `ZengLineng/fecbox-apple`，`FECBOX_LOCAL` 编译条件下保留原 SFM 界面并替换本机服务生命周期；desktop 子模块保持上游基线，不发布 iOS App。
 
 ## 更新流程
 
@@ -39,8 +39,8 @@ CI 在 Linux / Windows / macOS 上执行认证、畸形帧、恢复、内存边�
 
 Linux x86_64 的长期服务模板见 `deploy/fecbox.service`，读取 `/etc/fecbox/server.json` credential。启动前检查实际挂载的双向 cgroup IP 过滤器；模板保留隧道客户端地址作为回包例外，保护私网目的地址。其他服务器架构须先适配 BPF 查询 ABI。原版 VPN 和 FEC 版采用独立服务、端口、身份和网段。
 
-## macOS 本地代理 DMG
+## macOS 自签名 DMG
 
-`clients/macos-proxy` 是原生 SwiftUI 小型客户端，复用已验收的 FECBox CLI，不复制协议实现。无 Apple Developer ID 时使用本地代理模式；不加载 Network Extension，也不安装特权 helper。导入校验、启动/停止、日志和代理地址均在 GUI 中完成，保持系统网络设置。
+正式构建复用 `clients/apple` 的原 SFM 界面，入口为 `macos-local.yml` 和 `release/build_macos_local.py`。`cmd/fecbox-local` 通过原 libbox gRPC 协议提供配置重载、日志、分组和连接管理；未注册 Apple 平台接口，因此 TUN 使用核心已有的 macOS utun 实现。界面通过私有 Unix socket 控制自己启动的进程，TUN 配置在用户点击启动时请求本机管理员权限。进程随界面退出或失去运行配置而关闭，不安装持久系统服务。
 
-`macos-proxy.yml` 从 Release 或当前 CI 取 Apple Silicon/Intel 核心，校验哈希后编译 Universal App，ad-hoc 签名，验证 UI 和 DMG，附带独立 SHA-256。此构建不作 Apple 公证，不声称具备官方 VPN 扩展能力。
+CI 校验对应 FEC SDK、测试私有配置和本地生命周期，在隔离的 GitHub macOS runner 上测试真实 utun 的启动/重载/关闭，然后构建 Apple Silicon/Intel Universal App、ad-hoc 签名并验证 DMG。此构建没有 Network Extension、App Group 或 iCloud entitlement，不使用 Apple 开发者身份，也未做公证。升级上游时检查 `LocalExtensionProfile` 的生命周期 API、gRPC API 版本和 SFM target 的扩展依赖。早期的 `macos-proxy.yml` 小型代理界面保留为手动构建工具，不再接入默认 Release。

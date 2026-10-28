@@ -58,6 +58,54 @@ func TestPrivateConfiguration(t *testing.T) {
 }
 
 func TestLocalLifecycle(t *testing.T) {
+	testLifecycle(t, `{"outbounds":[{"type":"direct","tag":"direct"}]}`)
+}
+
+func TestNativeTUN(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("native utun requires administrator privileges; exercised on the macOS CI runner")
+	}
+	testLifecycle(t, `{"inbounds":[{"type":"tun","tag":"local-tun","address":["172.31.254.1/30"],"auto_route":false,"stack":"system"}],"outbounds":[{"type":"direct","tag":"direct"}]}`)
+}
+
+func TestWithdrawnConfigurationStopsBackend(t *testing.T) {
+	base, err := os.MkdirTemp("/tmp", "fecbox-local-lease-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(base)
+	config := filepath.Join(base, "local-config.json")
+	if err = os.WriteFile(config, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- run(base, os.Getpid(), os.Getuid(), os.Getgid()) }()
+	socket := filepath.Join(base, "command.sock")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err = os.Stat(socket); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("backend did not open its socket")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err = os.Remove(config); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("backend retained its lease after configuration withdrawal")
+	}
+	if _, err = os.Lstat(socket); !os.IsNotExist(err) {
+		t.Fatal("backend left its command socket behind")
+	}
+}
+
+func testLifecycle(t *testing.T, config string) {
+	t.Helper()
 	// Darwin's Unix socket path is shorter than the usual Go test directory.
 	base, err := os.MkdirTemp("/tmp", "fecbox-local-test-")
 	if err != nil {
@@ -65,7 +113,6 @@ func TestLocalLifecycle(t *testing.T) {
 	}
 	defer os.RemoveAll(base)
 	path := filepath.Join(base, "local-config.json")
-	config := `{"outbounds":[{"type":"direct","tag":"direct"}]}`
 	if err = os.WriteFile(path, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
