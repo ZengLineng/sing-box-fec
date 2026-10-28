@@ -17,8 +17,17 @@ jobs:
   build:
     uses: ./.github/workflows/fec.yml
     secrets: inherit
-  publish:
+  macos_proxy:
     needs: build
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/macos-proxy.yml
+    with:
+      core_run_id: ${{ github.run_id }}
+      publish: false
+  publish:
+    needs: [build, macos_proxy]
     permissions:
       contents: write
       actions: read

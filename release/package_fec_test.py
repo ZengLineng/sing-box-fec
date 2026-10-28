@@ -37,10 +37,15 @@ class PackagingTest(unittest.TestCase):
             (app / "FECBox-version-metadata.json").write_text(json.dumps({"version_code": 1140301}))
             for name in ("ANDROID_LICENSE", "ANDROID_SOURCE_COMMIT"):
                 (app / name).write_text(name)
+            macos_proxy = artifacts / "fecbox-macos-proxy"
+            macos_proxy.mkdir()
+            dmg_name = "FECBox-Proxy-1.14.3-fec.1-macos-universal.dmg"
+            (macos_proxy / dmg_name).write_bytes(b"verified dmg fixture")
             output = root / "output"
             package(artifacts, output, "1.14.3-fec.1")
             self.assertEqual(len(list(output.glob("*.zip"))), 3)
             self.assertEqual(len(list(output.glob("*.tar.gz"))), 5)
+            self.assertEqual((output / dmg_name).read_bytes(), b"verified dmg fixture")
             for line in (output / "SHA256SUMS").read_text().splitlines():
                 digest, name = line.split("  ", 1)
                 self.assertEqual(digest, hashlib.sha256((output / name).read_bytes()).hexdigest())

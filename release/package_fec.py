@@ -51,6 +51,13 @@ def package(artifacts, output, version):
         raise ValueError("Missing signed Android APKs")
     for path in apks + [app / "FECBox-version-metadata.json", app / "ANDROID_LICENSE", app / "ANDROID_SOURCE_COMMIT"]:
         shutil.copyfile(path, output / path.name)
+    macos_proxy = artifacts / "fecbox-macos-proxy"
+    if macos_proxy.exists():
+        files = sorted(macos_proxy.glob("FECBox-Proxy-*"))
+        if not any(path.suffix == ".dmg" for path in files):
+            raise ValueError("Missing verified macOS Proxy DMG")
+        for path in files:
+            shutil.copyfile(path, output / path.name)
     sums = [f"{digest(p)}  {p.name}" for p in sorted(output.iterdir()) if p.is_file()]
     (output / "SHA256SUMS").write_text("\n".join(sums) + "\n")
     (output / "RELEASE_NOTES.md").write_text(f"""FECBox {version}: authenticated WireGuard FEC with native Linux SOCKS egress.

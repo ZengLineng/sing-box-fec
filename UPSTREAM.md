@@ -38,3 +38,9 @@ CI 在 Linux / Windows / macOS 上执行认证、畸形帧、恢复、内存边�
 签名密钥以仓库 Secrets `FECBOX_ANDROID_KEYSTORE_B64` 和 `FECBOX_ANDROID_KEYSTORE_PASSWORD` 提供。私钥只在签名任务中落盘，任务结束删除；保持同一密钥才能原地升级 Android App。Android APK 的 applicationId 是 `dev.zenglineng.fecbox`，使用自己的更新源和签名，可与官方客户端并存。
 
 Linux x86_64 的长期服务模板见 `deploy/fecbox.service`，读取 `/etc/fecbox/server.json` credential。启动前检查实际挂载的双向 cgroup IP 过滤器；模板保留隧道客户端地址作为回包例外，保护私网目的地址。其他服务器架构须先适配 BPF 查询 ABI。原版 VPN 和 FEC 版采用独立服务、端口、身份和网段。
+
+## macOS 本地代理 DMG
+
+`clients/macos-proxy` 是原生 SwiftUI 小型客户端，复用已验收的 FECBox CLI，不复制协议实现。无 Apple Developer ID 时使用本地代理模式；不加载 Network Extension，也不安装特权 helper。导入校验、启动/停止、日志和代理地址均在 GUI 中完成，保持系统网络设置。
+
+`macos-proxy.yml` 从 Release 或当前 CI 取 Apple Silicon/Intel 核心，校验哈希后编译 Universal App，ad-hoc 签名，验证 UI 和 DMG，附带独立 SHA-256。此构建不作 Apple 公证，不声称具备官方 VPN 扩展能力。

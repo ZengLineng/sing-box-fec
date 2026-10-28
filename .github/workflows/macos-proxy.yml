@@ -1,0 +1,100 @@
+name: macOS Proxy DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing core Release to bundle
+        type: string
+        required: true
+        default: v1.14.3-fec.1
+      publish:
+        description: Add the verified DMG to that Release
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      core_run_id:
+        type: string
+        default: ''
+      publish:
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+      - name: Check local-proxy safety rules
+        run: |
+          xcrun swiftc -parse-as-library clients/macos-proxy/ConfigRules.swift clients/macos-proxy/ConfigRulesTests.swift -o "$RUNNER_TEMP/config-tests"
+          "$RUNNER_TEMP/config-tests"
+      - uses: actions/download-artifact@v4
+        if: inputs.core_run_id != ''
+        with:
+          pattern: fecbox-darwin-*
+          path: core-artifacts
+          run-id: ${{ inputs.core_run_id }}
+          github-token: ${{ github.token }}
+      - name: Prepare verified universal core
+        env:
+          CORE_RUN: ${{ inputs.core_run_id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, io, os, tarfile, urllib.request
+          from pathlib import Path
+          version = Path('release/FEC_VERSION').read_text().strip()
+          core = Path('macos-core'); core.mkdir()
+          if os.environ.get('CORE_RUN'):
+              for arch in ['arm64', 'amd64']:
+                  source = Path(f'core-artifacts/fecbox-darwin-{arch}')
+                  data = (source / f'fecbox-darwin-{arch}').read_bytes()
+                  expected = (source / 'SHA256SUMS').read_text().split()[0]
+                  assert hashlib.sha256(data).hexdigest() == expected
+                  (core / f'fecbox-darwin-{arch}').write_bytes(data)
+          else:
+              tag = os.environ['RELEASE_TAG']
+              assert tag == 'v' + version
+              base = f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}/releases/download/{tag}/'
+              with urllib.request.urlopen(base + 'SHA256SUMS', timeout=90) as response:
+                  sums = dict(line.split('  ', 1)[::-1] for line in response.read().decode().splitlines())
+              for arch in ['arm64', 'amd64']:
+                  name = f'fecbox-{version}-darwin-{arch}.tar.gz'
+                  with urllib.request.urlopen(base + name, timeout=90) as response:
+                      data = response.read()
+                  assert hashlib.sha256(data).hexdigest() == sums[name]
+                  with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
+                      binary = archive.extractfile(f'fecbox-{version}-darwin-{arch}/fecbox').read()
+                  (core / f'fecbox-darwin-{arch}').write_bytes(binary)
+          for path in core.iterdir(): path.chmod(0o755)
+          PY
+      - name: Build, sign and verify DMG
+        run: |
+          python3 release/build_macos_proxy.py --core-dir macos-core --output macos-build --version "$(cat release/FEC_VERSION)"
+          mkdir dist
+          cp macos-build/*.dmg macos-build/*.sha256 macos-build/*BUILDINFO.json dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fecbox-macos-proxy
+          path: dist/
+          if-no-files-found: error
+      - name: Add verified macOS GUI to Release
+        if: inputs.publish == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$(cat release/FEC_VERSION)"
+          gh release view "$tag" --json assets > published-assets.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          existing = {asset['name'] for asset in json.load(open('published-assets.json'))['assets']}
+          assert not existing.intersection(path.name for path in Path('dist').iterdir()), 'Refusing to replace existing assets'
+          PY
+          gh release upload "$tag" dist/*
