@@ -31,6 +31,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.26.8
+      - uses: actions/cache@v4
+        with:
+          path: macos-local/DerivedData
+          key: macos-local-${{ runner.os }}-${{ hashFiles('release/FEC_VERSION') }}-${{ github.sha }}
+          restore-keys: macos-local-${{ runner.os }}-${{ hashFiles('release/FEC_VERSION') }}-
       - name: Test private configuration and native backend lifecycle
         run: |
           go test -race -tags with_wireguard,with_gvisor ./cmd/fecbox-local
@@ -79,6 +84,12 @@ jobs:
           python3 release/build_macos_local.py --sdk "sdk/fecbox-$(cat release/FEC_VERSION)-apple-libbox/Libbox.xcframework" --output macos-local
           mkdir dist
           cp macos-local/*.dmg macos-local/*.sha256 macos-local/*BUILDINFO.json dist/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fecbox-macos-signed-app
+          path: macos-local/signed-app.tar.gz
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:

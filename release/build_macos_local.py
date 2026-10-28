@@ -82,7 +82,9 @@ def build(sdk, output, architectures, packages=None):
             run("codesign", "--force", "--sign", "-", "--timestamp=none", path)
     run("codesign", "--force", "--sign", "-", "--timestamp=none", app)
     run("codesign", "--verify", "--deep", "--strict", app)
-    run("lipo", "-verify_arch", *architectures, app / "Contents/MacOS/FECBox")
+    run("tar", "-czf", output / "signed-app.tar.gz", "-C", stage, "FECBox.app")
+    run("lipo", app / "Contents/MacOS/FECBox", "-verify_arch", *architectures)
+    run("lipo", backend, "-verify_arch", *architectures)
     run(backend, "--version")
     run("ln", "-s", "/Applications", stage / "Applications")
     label = "universal" if len(architectures) == 2 else architectures[0]
