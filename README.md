@@ -15,6 +15,7 @@
 - [配置与客户端准备](docs/fec/USAGE.md)
 - [线格式和实现边界](docs/fec/PROTOCOL.md)
 - [上游同步与验证范围](UPSTREAM.md)
+- [首次独立公网验证记录](docs/fec/VALIDATION.md)
 - [客户端模板](examples/wireguard-fec/client.json)、[Linux 系统出口模板](examples/wireguard-fec/server-native.json)
 
 ```sh
