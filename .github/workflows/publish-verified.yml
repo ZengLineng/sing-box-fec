@@ -101,10 +101,20 @@ jobs:
             echo 'Tag does not match the compiled source version' >&2
             exit 1
           fi
+          default_branch=$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha > release-tag.txt 2>/dev/null; then
+            default_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$default_branch" --jq .sha)
+            if [[ "$default_sha" != "$SOURCE_SHA" ]]; then
+              echo 'Create the version tag at the verified source commit before publishing an older build.' >&2
+              exit 1
+            fi
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$tag" -f "sha=$SOURCE_SHA" --jq .object.sha > release-tag.txt
+          fi
+          test "$(cat release-tag.txt)" = "$SOURCE_SHA"
           if gh release view "$tag" --json isDraft > release-state.json 2>/dev/null; then
             python3 -c 'import json; assert json.load(open("release-state.json"))["isDraft"], "Published releases are immutable; bump FEC_VERSION"'
           else
-            gh release create "$tag" --target "$SOURCE_SHA" --title "FECBox $VERSION" --draft --prerelease --notes-file release-assets/RELEASE_NOTES.md
+            gh release create "$tag" --verify-tag --target "$default_branch" --title "FECBox $VERSION" --draft --prerelease --notes-file release-assets/RELEASE_NOTES.md
           fi
           gh release upload "$tag" release-assets/* --clobber
           gh release edit "$tag" --draft=false --prerelease=true
